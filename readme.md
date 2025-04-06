@@ -7,6 +7,10 @@ to run the project:
 
 `cargo run --bin blinky`
 
+`cargo build --bin lcd`
+
+`cargo run --bin lcd`
+
 
 ## prerequisite
 
