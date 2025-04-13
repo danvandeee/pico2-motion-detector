@@ -17,8 +17,6 @@ use panic_halt as _;
 
 // Alias for our HAL crate
 use rp235x_hal as hal;
-use rp235x_hal::gpio::bank0::Gpio14;
-use rp235x_hal::gpio::{FunctionSio, Pin, PullDown, SioOutput};
 use rp235x_hal::timer::CopyableTimer0;
 
 // Some things we need
@@ -33,7 +31,6 @@ use usbd_serial::SerialPort;
 
 // Some things we need
 use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::OutputPin;
 
 /// Tell the Boot ROM about our application
 #[link_section = ".start_block"]

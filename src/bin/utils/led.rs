@@ -97,7 +97,7 @@
     
         pub fn reset_cooldown(&mut self) {
             if !self.led_active {
-                self.cooldown_time = 500_000; // Reset cooldown time to 0.5 second
+                self.cooldown_time = CoolDownTime::HalfSecond.get(); // Reset cooldown time to 0.5 second
             }
            
         }
