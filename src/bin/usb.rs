@@ -1,13 +1,12 @@
 //! # GPIO 'usb' Example
-//!
-//! This application demonstrates how to control a GPIO pin on the rp235x.
-//!
-//! It may need to be adapted to your particular board layout and/or pin assignment.
-//!
-//! See the `Cargo.toml` file for Copyright and license details.
 
 #![no_std]
 #![no_main]
+
+mod utils;
+
+use utils::led::CoolDownTime as CoolDownTime;
+use utils::led::LedStatus as LedStatus;
 
 // Ensure we halt the program on panic (if we don't mention this crate it won't
 // be linked)
@@ -112,13 +111,12 @@ fn main() -> ! {
 
 
     led.set_high();
-    timer.delay_ms(500); // 200 ms delay
+    timer.delay_ms(500); // 500 ms delay
     led.set_low();
-    timer.delay_ms(500); // 200 ms delay
+    timer.delay_ms(500); // 500 ms delay
     led.set_high_repeatable_custom_speed(5, CoolDownTime::OneTenthSecond); // Set the LED to blink 3 times with a 0.1 second cooldown time
 
     let last_toggle_time = timer.get_counter().ticks();
-    // led.set_high_repeatable(5); // Set the LED to blink 5 times
     loop {
         said_hello = usb_communication_say_hello(said_hello, last_toggle_time, &mut timer, &mut serial, &mut led);
         usb_communication(&mut serial, &mut usb_dev, &mut led);
@@ -212,99 +210,5 @@ pub static PICOTOOL_ENTRIES: [hal::binary_info::EntryAddr; 5] = [
     hal::binary_info::rp_cargo_homepage_url!(),
     hal::binary_info::rp_program_build_attribute!(),
 ];
-
-enum CoolDownTime {
-    OneTenthSecond = 100_000, // 0.1 second cooldown time
-    HalfSecond = 500_000, // 0.5 second cooldown time
-    OneSecond = 1_000_000, // 1 second cooldown time
-}
-
-impl CoolDownTime {
-    fn get(&self) -> u64 {
-        match self {
-            CoolDownTime::OneTenthSecond => 100_000,
-            CoolDownTime::HalfSecond => 500_000,
-            CoolDownTime::OneSecond => 1_000_000
-        }
-    }
-    
-}
-
-struct LedStatus {
-    led_active: bool,
-    last_toggle_time: u64,
-    led_pin: Pin<Gpio14, FunctionSio<SioOutput>, PullDown>,
-    cooldown_time: u64,
-    timer: rp235x_hal::Timer<CopyableTimer0>,
-    repeat: u64,
-}
-
-impl LedStatus {
-    fn new(led_pin: Pin<Gpio14, FunctionSio<SioOutput>, PullDown>, timer: rp235x_hal::Timer<CopyableTimer0>) -> Self {
-        Self {
-            led_active: false,
-            last_toggle_time: timer.get_counter().ticks(),
-            led_pin,
-            cooldown_time: 500_000, // 0.5 second cooldown time
-            timer,
-            repeat: 0,
-        }
-    }
-
-    fn repeat_if_needed(&mut self) {
-        if self.repeat > 0 {
-            if self.led_active {
-                self.set_low();
-            } else if !self.led_active && self.set_high() {
-                self.repeat -= 1;
-            }
-
-        } else {
-            self.repeat = 0;
-            self.set_low();
-            self.reset_cooldown();
-        }
-    }
-
-    fn set_high(&mut self) -> bool {
-    // fn set_high(&mut self) {
-        let current_time = self.timer.get_counter().ticks();
-
-        if !self.led_active && current_time - self.last_toggle_time >= self.cooldown_time { 
-                self.led_pin.set_high().unwrap();
-                self.led_active = true;
-                self.last_toggle_time = current_time;
-                return true;
-        }
-        return false;
-    }
-
-     fn set_high_repeatable(&mut self, repeat: u64) {
-        self.repeat = repeat;
-    }
-
-    fn set_high_repeatable_custom_speed(&mut self, repeat: u64, cooldown: CoolDownTime) {
-        self.repeat = repeat;
-        self.cooldown_time = cooldown.get(); // Set the cooldown time based on the enum value  
-    }
-
-    fn set_low(&mut self, ) {
-        let current_time = self.timer.get_counter().ticks();
-
-        if self.led_active && current_time - self.last_toggle_time >= self.cooldown_time { 
-                self.led_pin.set_low().unwrap();
-                self.led_active = false;
-                self.last_toggle_time = current_time;
-                // self.reset_cooldown();
-        }
-    }
-
-    fn reset_cooldown(&mut self) {
-        if !self.led_active {
-            self.cooldown_time = 500_000; // Reset cooldown time to 0.5 second
-        }
-       
-    }
-}
 
 // End of file
