@@ -117,11 +117,11 @@ fn main() -> ! {
     timer.delay_ms(200); // 200 ms delay
 
     let last_toggle_time = timer.get_counter().ticks();
-    
+    led.set_high_repeatable(5); // Set the LED to blink 5 times
     loop {
         said_hello = usb_communication_say_hello(said_hello, last_toggle_time, &mut timer, &mut serial, &mut led);
         usb_communication(&mut serial, &mut usb_dev, &mut led);
-        led.set_low();
+        led.repeat_if_needed();
     }
 }
 
@@ -217,7 +217,8 @@ struct LedStatus {
     last_toggle_time: u64,
     led_pin: Pin<Gpio14, FunctionSio<SioOutput>, PullDown>,
     cooldown_time: u64,
-    timer: rp235x_hal::Timer<CopyableTimer0>
+    timer: rp235x_hal::Timer<CopyableTimer0>,
+    repeat: u64,
 }
 
 impl LedStatus {
@@ -227,18 +228,41 @@ impl LedStatus {
             last_toggle_time: timer.get_counter().ticks(),
             led_pin,
             cooldown_time: 500_000, // 0.5 second cooldown time
-            timer
+            timer,
+            repeat: 0,
         }
     }
 
-    fn set_high(&mut self, ) {
+    fn repeat_if_needed(&mut self) {
+        if self.repeat > 0 {
+            if self.led_active {
+                self.set_low();
+            } else if !self.led_active && self.set_high() {
+                self.repeat -= 1;
+            }
+
+        } else {
+            self.repeat = 0;
+            self.reset_cooldown();
+            self.set_low();
+        }
+    }
+
+    fn set_high(&mut self) -> bool {
+    // fn set_high(&mut self) {
         let current_time = self.timer.get_counter().ticks();
 
         if !self.led_active && current_time - self.last_toggle_time >= self.cooldown_time { 
                 self.led_pin.set_high().unwrap();
                 self.led_active = true;
                 self.last_toggle_time = current_time;
+                return true;
         }
+        return false;
+    }
+
+     fn set_high_repeatable(&mut self, repeat: u64) {
+        self.repeat = repeat;
     }
 
     fn set_low(&mut self, ) {
