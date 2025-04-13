@@ -112,12 +112,13 @@ fn main() -> ! {
 
 
     led.set_high();
-    timer.delay_ms(200); // 200 ms delay
+    timer.delay_ms(500); // 200 ms delay
     led.set_low();
-    timer.delay_ms(200); // 200 ms delay
+    timer.delay_ms(500); // 200 ms delay
+    led.set_high_repeatable_custom_speed(5, CoolDownTime::OneTenthSecond); // Set the LED to blink 3 times with a 0.1 second cooldown time
 
     let last_toggle_time = timer.get_counter().ticks();
-    led.set_high_repeatable(5); // Set the LED to blink 5 times
+    // led.set_high_repeatable(5); // Set the LED to blink 5 times
     loop {
         said_hello = usb_communication_say_hello(said_hello, last_toggle_time, &mut timer, &mut serial, &mut led);
         usb_communication(&mut serial, &mut usb_dev, &mut led);
@@ -212,6 +213,23 @@ pub static PICOTOOL_ENTRIES: [hal::binary_info::EntryAddr; 5] = [
     hal::binary_info::rp_program_build_attribute!(),
 ];
 
+enum CoolDownTime {
+    OneTenthSecond = 100_000, // 0.1 second cooldown time
+    HalfSecond = 500_000, // 0.5 second cooldown time
+    OneSecond = 1_000_000, // 1 second cooldown time
+}
+
+impl CoolDownTime {
+    fn get(&self) -> u64 {
+        match self {
+            CoolDownTime::OneTenthSecond => 100_000,
+            CoolDownTime::HalfSecond => 500_000,
+            CoolDownTime::OneSecond => 1_000_000
+        }
+    }
+    
+}
+
 struct LedStatus {
     led_active: bool,
     last_toggle_time: u64,
@@ -243,8 +261,8 @@ impl LedStatus {
 
         } else {
             self.repeat = 0;
-            self.reset_cooldown();
             self.set_low();
+            self.reset_cooldown();
         }
     }
 
@@ -265,6 +283,11 @@ impl LedStatus {
         self.repeat = repeat;
     }
 
+    fn set_high_repeatable_custom_speed(&mut self, repeat: u64, cooldown: CoolDownTime) {
+        self.repeat = repeat;
+        self.cooldown_time = cooldown.get(); // Set the cooldown time based on the enum value  
+    }
+
     fn set_low(&mut self, ) {
         let current_time = self.timer.get_counter().ticks();
 
@@ -272,12 +295,15 @@ impl LedStatus {
                 self.led_pin.set_low().unwrap();
                 self.led_active = false;
                 self.last_toggle_time = current_time;
-                self.reset_cooldown();
+                // self.reset_cooldown();
         }
     }
 
     fn reset_cooldown(&mut self) {
-        self.cooldown_time = 500_000; // Reset cooldown time to 0.5 second
+        if !self.led_active {
+            self.cooldown_time = 500_000; // Reset cooldown time to 0.5 second
+        }
+       
     }
 }
 
