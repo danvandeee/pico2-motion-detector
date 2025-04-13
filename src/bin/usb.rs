@@ -1,13 +1,14 @@
 //! # GPIO 'usb' Example
-//!
-//! This application demonstrates how to control a GPIO pin on the rp235x.
-//!
-//! It may need to be adapted to your particular board layout and/or pin assignment.
-//!
-//! See the `Cargo.toml` file for Copyright and license details.
 
 #![no_std]
 #![no_main]
+
+mod utils;
+
+use utils::led::CoolDownTime as CoolDownTime;
+use utils::led::LedStatus as LedStatus;
+
+use utils::usb_communication as usb_mod;
 
 // Ensure we halt the program on panic (if we don't mention this crate it won't
 // be linked)
@@ -16,8 +17,6 @@ use panic_halt as _;
 
 // Alias for our HAL crate
 use rp235x_hal as hal;
-use rp235x_hal::gpio::bank0::Gpio14;
-use rp235x_hal::gpio::{FunctionSio, Pin, PullDown, SioOutput};
 use rp235x_hal::timer::CopyableTimer0;
 
 // Some things we need
@@ -32,7 +31,6 @@ use usbd_serial::SerialPort;
 
 // Some things we need
 use embedded_hal::delay::DelayNs;
-use embedded_hal::digital::OutputPin;
 
 /// Tell the Boot ROM about our application
 #[link_section = ".start_block"]
@@ -112,16 +110,16 @@ fn main() -> ! {
 
 
     led.set_high();
-    timer.delay_ms(200); // 200 ms delay
+    timer.delay_ms(500); // 500 ms delay
     led.set_low();
-    timer.delay_ms(200); // 200 ms delay
+    timer.delay_ms(500); // 500 ms delay
+    led.set_high_repeatable_custom_speed(5, CoolDownTime::OneTenthSecond); // Set the LED to blink 3 times with a 0.1 second cooldown time
 
     let last_toggle_time = timer.get_counter().ticks();
-    
     loop {
         said_hello = usb_communication_say_hello(said_hello, last_toggle_time, &mut timer, &mut serial, &mut led);
-        usb_communication(&mut serial, &mut usb_dev, &mut led);
-        led.set_low();
+        usb_mod::usb_communication(&mut serial, &mut usb_dev, &mut led);
+        led.repeat_if_needed();
     }
 }
 
@@ -138,65 +136,16 @@ fn usb_communication_say_hello(
 
     // A welcome message at the beginning
     if !said_hello && timer.get_counter().ticks() - last_toggle_time >= 8_000_000 {
-        write_serial_string(&"Hello, World!\r\n", serial);
+        usb_mod::write_serial_string(&"Hello, World!\r\n", serial);
 
         let time = timer.get_counter().ticks();
         let mut text: String<64> = String::new();
         writeln!(&mut text, "Current timer ticks: {}", time).unwrap();
-        write_serial_string(&text, serial);
+        usb_mod::write_serial_string(&text, serial);
         led.set_high();
         return true;
     } else {
         return false;
-    }
-}
-
-fn usb_communication(
-    serial: &mut SerialPort<'_, rp235x_hal::usb::UsbBus>, 
-    usb_dev: &mut UsbDevice<'_, rp235x_hal::usb::UsbBus>, 
-    led: &mut LedStatus) {
-
-    // Check for new data
-    if usb_dev.poll(&mut [ serial] ) {
-        let mut buf = [0u8; 64];
-        match serial.read(&mut buf) {
-            Err(_e) => {
-                // Do nothing
-                led.set_high();
-            }
-            Ok(0) => {
-                // Do nothing
-            }
-            Ok(count) => {
-                // We have data to process
-                // Blink the LED to show we are processing data
-                led.set_high();
-
-                // Convert to upper case
-                buf.iter_mut().take(count).for_each(|b| {
-                    b.make_ascii_uppercase();
-                });
-
-                write_serial_string(&"\r\nReceived: ", serial);
-                write_serial_data(&buf, serial, count);
-            }
-        }
-    }
-}
-
-fn write_serial_string(text: &str, serial: &mut SerialPort<'_, rp235x_hal::usb::UsbBus>) {
-    write_serial_data(text.as_bytes(), serial, text.len());
-}
-
-fn write_serial_data(buf: &[u8], serial: &mut SerialPort<'_, rp235x_hal::usb::UsbBus>, count: usize) {
-    let mut wr_ptr: &[u8] = &buf[..count];
-    while !wr_ptr.is_empty() {
-        match serial.write(wr_ptr) {
-            Ok(len) => wr_ptr = &wr_ptr[len..],
-            Err(_) => {
-                break;
-            },
-        };
     }
 }
 
@@ -211,50 +160,5 @@ pub static PICOTOOL_ENTRIES: [hal::binary_info::EntryAddr; 5] = [
     hal::binary_info::rp_cargo_homepage_url!(),
     hal::binary_info::rp_program_build_attribute!(),
 ];
-
-struct LedStatus {
-    led_active: bool,
-    last_toggle_time: u64,
-    led_pin: Pin<Gpio14, FunctionSio<SioOutput>, PullDown>,
-    cooldown_time: u64,
-    timer: rp235x_hal::Timer<CopyableTimer0>
-}
-
-impl LedStatus {
-    fn new(led_pin: Pin<Gpio14, FunctionSio<SioOutput>, PullDown>, timer: rp235x_hal::Timer<CopyableTimer0>) -> Self {
-        Self {
-            led_active: false,
-            last_toggle_time: timer.get_counter().ticks(),
-            led_pin,
-            cooldown_time: 500_000, // 0.5 second cooldown time
-            timer
-        }
-    }
-
-    fn set_high(&mut self, ) {
-        let current_time = self.timer.get_counter().ticks();
-
-        if !self.led_active && current_time - self.last_toggle_time >= self.cooldown_time { 
-                self.led_pin.set_high().unwrap();
-                self.led_active = true;
-                self.last_toggle_time = current_time;
-        }
-    }
-
-    fn set_low(&mut self, ) {
-        let current_time = self.timer.get_counter().ticks();
-
-        if self.led_active && current_time - self.last_toggle_time >= self.cooldown_time { 
-                self.led_pin.set_low().unwrap();
-                self.led_active = false;
-                self.last_toggle_time = current_time;
-                self.reset_cooldown();
-        }
-    }
-
-    fn reset_cooldown(&mut self) {
-        self.cooldown_time = 500_000; // Reset cooldown time to 0.5 second
-    }
-}
 
 // End of file
