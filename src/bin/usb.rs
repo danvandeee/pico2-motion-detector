@@ -138,18 +138,12 @@ fn usb_communication_say_hello(
 
     // A welcome message at the beginning
     if !said_hello && timer.get_counter().ticks() - last_toggle_time >= 8_000_000 {
-        let _ = serial.write(b"Hello, World!\r\n");
+        write_serial_string(&"Hello, World!\r\n", serial);
 
         let time = timer.get_counter().ticks();
         let mut text: String<64> = String::new();
         writeln!(&mut text, "Current timer ticks: {}", time).unwrap();
-
-        // This only works reliably because the number of bytes written to
-        // the serial port is smaller than the buffers available to the USB
-        // peripheral. In general, the return value should be handled, so that
-        // bytes not transferred yet don't get lost.
-        let _ = serial.write(text.as_bytes());
-
+        write_serial_string(&text, serial);
         led.set_high();
         return true;
     } else {
@@ -157,7 +151,7 @@ fn usb_communication_say_hello(
     }
 }
 
-fn usb_communication( 
+fn usb_communication(
     serial: &mut SerialPort<'_, rp235x_hal::usb::UsbBus>, 
     usb_dev: &mut UsbDevice<'_, rp235x_hal::usb::UsbBus>, 
     led: &mut LedStatus) {
@@ -182,23 +176,29 @@ fn usb_communication(
                 buf.iter_mut().take(count).for_each(|b| {
                     b.make_ascii_uppercase();
                 });
-                // Send back to the host
-                let mut wr_ptr = &buf[..count];
-                while !wr_ptr.is_empty() {
-                    match serial.write(wr_ptr) {
-                        Ok(len) => wr_ptr = &wr_ptr[len..],
-                        // On error, just drop unwritten data.
-                        // One possible error is Err(WouldBlock), meaning the USB
-                        // write buffer is full.
-                        Err(_) => break,
-                    };
-                }
+
+                write_serial_string(&"\r\nReceived: ", serial);
+                write_serial_data(&buf, serial, count);
             }
         }
     }
 }
 
+fn write_serial_string(text: &str, serial: &mut SerialPort<'_, rp235x_hal::usb::UsbBus>) {
+    write_serial_data(text.as_bytes(), serial, text.len());
+}
 
+fn write_serial_data(buf: &[u8], serial: &mut SerialPort<'_, rp235x_hal::usb::UsbBus>, count: usize) {
+    let mut wr_ptr: &[u8] = &buf[..count];
+    while !wr_ptr.is_empty() {
+        match serial.write(wr_ptr) {
+            Ok(len) => wr_ptr = &wr_ptr[len..],
+            Err(_) => {
+                break;
+            },
+        };
+    }
+}
 
 
 /// Program metadata for `picotool info`
