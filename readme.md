@@ -7,6 +7,9 @@ to run the project:
 
 `cargo run --bin blinky`
 
+`cargo build --bin usb`
+
+`cargo run --bin usb`
 
 ## prerequisite
 
