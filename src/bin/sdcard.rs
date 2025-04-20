@@ -1,4 +1,4 @@
-//! # GPIO 'usb' Example
+//! # GPIO 'sdcard' Example
 
 #![no_std]
 #![no_main]
@@ -162,3 +162,5 @@ pub static PICOTOOL_ENTRIES: [hal::binary_info::EntryAddr; 5] = [
 ];
 
 // End of file
+
+// see https://pico.implrust.com/sdcard/read-sdcard.html

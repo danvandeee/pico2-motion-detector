@@ -11,6 +11,10 @@ to run the project:
 
 `cargo run --bin usb`
 
+`cargo build --bin sdcard`
+
+`cargo run --bin sdcard`
+
 ## prerequisite
 
 ###
