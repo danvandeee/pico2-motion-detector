@@ -1,6 +1,9 @@
 #![no_std]
 #![no_main]
 
+use core::fmt::Debug;
+
+use heapless::String;
 // Ensure we halt the program on panic (if we don't mention this crate it won't
 // be linked)
 use panic_halt as _;
@@ -59,5 +62,49 @@ pub fn write_serial_data(buf: &[u8], serial: &mut SerialPort<'_, rp235x_hal::usb
                 break;
             },
         };
+    }
+}
+
+
+pub struct Logger {
+    pub log: String<1024>,
+    has_error: bool,
+    too_many_logs: &'static str,
+}
+
+impl Logger {
+    pub fn new() -> Self {
+        Logger {
+            log: String::<1024>::new(),
+            too_many_logs: "Too many logs!\r\n",
+            has_error: false,
+        }
+    }
+
+    pub fn log(&mut self, text: &str) {
+        match self.log.push_str(text) {
+            Ok(_) => (),
+            Err(_) => {
+                // If the string is too long, we can clear it or handle it in some other way
+                self.has_error = true;
+            }
+        }
+    }
+
+    pub fn send(&mut self, serial: &mut SerialPort<'_, rp235x_hal::usb::UsbBus>) {
+        if self.has_error {
+            write_serial_string(self.too_many_logs, serial);
+            self.has_error = false;
+
+        }
+        if self.log.len() == 0 {
+            return;
+        }
+        write_serial_string(&self.log, serial);
+        self.clear();
+    }
+
+    pub fn clear(&mut self) {
+        self.log.clear();
     }
 }

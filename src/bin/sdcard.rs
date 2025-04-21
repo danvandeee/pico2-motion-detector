@@ -8,12 +8,12 @@ mod utils;
 use utils::led::CoolDownTime as CoolDownTime;
 use utils::led::LedStatus as LedStatus;
 
+use utils::usb_communication::Logger;
 use utils::usb_communication as usb_mod;
 
 // Ensure we halt the program on panic (if we don't mention this crate it won't
 // be linked)
 use panic_halt as _;
-
 
 // Alias for our HAL crate
 use rp235x_hal as hal;
@@ -22,15 +22,15 @@ use rp235x_hal::timer::CopyableTimer0;
 // Some things we need
 use core::fmt::Write;
 use heapless::String;
+use embedded_hal::delay::DelayNs;
 
 // USB Device support
-use usb_device::{class_prelude::*, prelude::*};
+use usb_device::{class_prelude::*, prelude::*}; // USB Device support
+use usbd_serial::SerialPort; // USB Communications Class Device support
 
-// USB Communications Class Device support
-use usbd_serial::SerialPort;
-
-// Some things we need
-use embedded_hal::delay::DelayNs;
+//sd card
+use embedded_hal_bus::spi::ExclusiveDevice;
+use embedded_sdmmc::{SdCard, TimeSource, Timestamp, VolumeIdx, VolumeManager};
 
 /// Tell the Boot ROM about our application
 #[link_section = ".start_block"]
@@ -93,6 +93,9 @@ fn main() -> ! {
     // Set up the USB Communications Class Device driver
     let mut serial: SerialPort<'_, rp235x_hal::usb::UsbBus> = SerialPort::new(&usb_bus);
 
+    let mut logger = Logger::new();
+    logger.log("Starting up the SD card example!\r\n");
+
     // Create a USB device with a fake VID and PID
     let mut usb_dev: UsbDevice<'_, rp235x_hal::usb::UsbBus> = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
         .strings(&[StringDescriptors::default()
@@ -108,18 +111,23 @@ fn main() -> ! {
     // Configure GPIO14 as an output
     let mut led: LedStatus = LedStatus::new(pins.gpio14.into_push_pull_output(), timer);
 
-
     led.set_high();
     timer.delay_ms(500); // 500 ms delay
     led.set_low();
     timer.delay_ms(500); // 500 ms delay
     led.set_high_repeatable_custom_speed(5, CoolDownTime::OneTenthSecond); // Set the LED to blink 3 times with a 0.1 second cooldown time
 
+    logger.log("Loading the microSD!\r\n");
+
+
     let last_toggle_time = timer.get_counter().ticks();
     loop {
-        said_hello = usb_communication_say_hello(said_hello, last_toggle_time, &mut timer, &mut serial, &mut led);
+        said_hello = usb_communication_say_hello(said_hello, last_toggle_time, &mut timer, &mut serial, &mut led, &mut logger);
         usb_mod::usb_communication(&mut serial, &mut usb_dev, &mut led);
         led.repeat_if_needed();
+        if said_hello {
+            logger.send(&mut serial);
+        }
     }
 }
 
@@ -128,7 +136,8 @@ fn usb_communication_say_hello(
     last_toggle_time: u64, 
     timer: &mut rp235x_hal::Timer<CopyableTimer0>, 
     serial: &mut SerialPort<'_, rp235x_hal::usb::UsbBus>, 
-    led: &mut LedStatus) -> bool {
+    led: &mut LedStatus,
+    logger: &mut Logger) -> bool {
 
     if said_hello {
         return true;
@@ -136,6 +145,8 @@ fn usb_communication_say_hello(
 
     // A welcome message at the beginning
     if !said_hello && timer.get_counter().ticks() - last_toggle_time >= 8_000_000 {
+        logger.log("Checking if we should say hello...\r\n");
+
         usb_mod::write_serial_string(&"Hello, World!\r\n", serial);
 
         let time = timer.get_counter().ticks();
@@ -160,6 +171,25 @@ pub static PICOTOOL_ENTRIES: [hal::binary_info::EntryAddr; 5] = [
     hal::binary_info::rp_cargo_homepage_url!(),
     hal::binary_info::rp_program_build_attribute!(),
 ];
+
+#[derive(Default)]
+pub struct DummyTimesource();
+
+impl TimeSource for DummyTimesource {
+    // In theory you could use the RTC of the rp2040 here, if you had
+    // any external time synchronizing device.
+    fn get_timestamp(&self) -> Timestamp {
+        Timestamp {
+            year_since_1970: 0,
+            zero_indexed_month: 0,
+            zero_indexed_day: 0,
+            hours: 0,
+            minutes: 0,
+            seconds: 0,
+        }
+    }
+}
+
 
 // End of file
 
